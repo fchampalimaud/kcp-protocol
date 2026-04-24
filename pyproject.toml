@@ -1,0 +1,16 @@
+[project]
+name = "kcp-protocol"
+version = "0.1.0"
+description = "Python implementation of the KCP (KERN Communications Protocol) protocol."
+readme = "README.md"
+authors = [
+    { name = "Hardware and Software Platform, Champalimaud Foundation", email = "software@research.fchampalimaud.org" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
