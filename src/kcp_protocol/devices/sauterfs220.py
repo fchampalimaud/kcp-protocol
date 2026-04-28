@@ -119,3 +119,16 @@ class SauterFS220(KCPDevice):
     def zero_immediately(self) -> None:
         self.require_support("ZI")
         self._send_no_reply("ZI")
+
+    def get_battery_status(self) -> int | str:
+        self.require_support("IBBS")
+        raw_line = self._request_raw_line("IBBS")
+        parts = raw_line.split()
+        # return 3rd part, which is the battery status text as an integer
+        # if not 5 parts or the 3rd part is not an integer, return the whole raw line for debugging
+        if len(parts) != 5:
+            return raw_line
+        try:
+            return int(parts[2])
+        except ValueError:
+            return raw_line

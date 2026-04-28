@@ -22,6 +22,9 @@ def main() -> None:
         print("Device information:")
         print(f"{dev_info}")
 
+        battery_status = device.get_battery_status()
+        print(f"Battery status: {battery_status}%")
+
 
 if __name__ == "__main__":
     main()
