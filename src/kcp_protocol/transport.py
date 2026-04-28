@@ -76,21 +76,22 @@ class KCPSerialTransport:
         raw = bytearray()
 
         while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                if raw:
+                    raise KCPTimeoutError("Timed out waiting for line terminator")
+                return None
+
             chunk = ser.read_until(b"\n")
             if chunk:
                 raw.extend(chunk)
                 if raw.endswith(b"\n"):
                     break
-            else:
-                if raw:
-                    raise KCPTimeoutError("Timed out waiting for line terminator")
-                if deadline is None:
-                    return None
+                continue
 
-        if deadline is not None and time.monotonic() >= deadline:
             if raw:
                 raise KCPTimeoutError("Timed out waiting for line terminator")
-            return None
+            if deadline is None:
+                return None
 
         try:
             text = raw.decode("ascii", errors="strict")
@@ -117,20 +118,13 @@ class KCPSerialTransport:
         ser.write(payload)
         ser.flush()
 
-        lines = [self._read_required_line()]
+        lines = [self._read_required_line(timeout=2.0)]
 
-        original_timeout = ser.timeout
-        try:
-            ser.timeout = 0.1
-            while True:
-                line = self._read_optional_line(timeout=0.1)
-                if line is None:
-                    break
-                lines.append(line)
-        finally:
-            ser.timeout = original_timeout
-
-        return lines
+        while True:
+            line = self._read_optional_line(timeout=0.1)
+            if line is None:
+                return lines
+            lines.append(line)
 
     def _require_open_serial(self) -> serial.Serial:
         if self._ser is None or not self._ser.is_open:

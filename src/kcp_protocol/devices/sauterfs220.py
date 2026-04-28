@@ -17,6 +17,7 @@ class SauterFS220(KCPDevice):
         port: str | None = None,
         *,
         transport: KCPTransport | None = None,
+        stream_interval_ms: int | None = None,
     ) -> None:
         if (port is None) == (transport is None):
             raise ValueError("Specify exactly one of port or transport")
@@ -26,9 +27,18 @@ class SauterFS220(KCPDevice):
         elif transport is not None:
             super().__init__(transport)
 
+        self._stream_interval_ms = stream_interval_ms
+        self._sir_active = False
+
     def open(self) -> None:
         super().open()
         self.initialize()
+
+    def close(self) -> None:
+        try:
+            self.stop_stream()
+        finally:
+            super().close()
 
     def initialize(self) -> None:
         self.refresh_supported_commands()
@@ -48,29 +58,45 @@ class SauterFS220(KCPDevice):
 
     def stream_immediate_value_raw(
         self,
+        *,
         interval_ms: int | None = None,
     ) -> Generator[str, None, None]:
-        self.require_support("SIR", "@")
+        effective_interval_ms = (
+            self._stream_interval_ms if interval_ms is None else interval_ms
+        )
+        self._start_sir(effective_interval_ms)
 
-        if interval_ms is not None and interval_ms <= 0:
-            raise ValueError("interval_ms must be a positive integer")
+        try:
+            while self._sir_active:
+                raw = self._read_raw_line(
+                    timeout=self._sir_read_timeout(effective_interval_ms)
+                )
+                if not self._is_immediate_value_raw_line(raw):
+                    raise KCPUnexpectedReply(f"Invalid SIR reply: {raw!r}")
+                yield raw
+        finally:
+            self.stop_stream()
+
+    def stop_stream(self) -> None:
+        if not self._sir_active:
+            return
+
+        self._sir_active = False
+        self._send_no_reply("@")
+        self._drain_sir_shutdown()
+
+    def _start_sir(self, interval_ms: int | None) -> None:
+        if self._sir_active:
+            raise RuntimeError("SIR stream is already active")
+
+        self.require_support("SIR", "@")
 
         if interval_ms is None:
             self._send_no_reply("SIR")
         else:
             self._send_no_reply("SIR", interval_ms)
 
-        read_timeout = self._sir_read_timeout(interval_ms)
-
-        try:
-            while True:
-                raw = self._read_raw_line(timeout=read_timeout)
-                if not self._is_immediate_value_raw_line(raw):
-                    raise KCPUnexpectedReply(f"Invalid SIR reply: {raw!r}")
-                yield raw
-        finally:
-            self._send_no_reply("@")
-            self._drain_sir_shutdown()
+        self._sir_active = True
 
     @staticmethod
     def _sir_read_timeout(interval_ms: int | None) -> float:
