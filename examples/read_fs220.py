@@ -4,10 +4,10 @@ from kcp_protocol import SauterFS220
 
 def main() -> None:
 
-    with SauterFS220(port="COM3", stream_interval_ms=100) as device:
+    with SauterFS220(port="COM3") as device:
         try:
-            for raw in device.stream_immediate_value_raw():
-                print(raw)
+            for value in device.stream_values(interval_ms=100):
+                print(value)
 
                 if msvcrt.kbhit():
                     _key = msvcrt.getch()

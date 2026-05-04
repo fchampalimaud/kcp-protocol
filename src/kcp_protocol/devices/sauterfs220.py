@@ -1,10 +1,19 @@
 from collections.abc import Generator
+from dataclasses import dataclass
+from typing import Literal
+
 from kcp_protocol.device import (
     KCPDevice,
     KCPTransport,
     KCPUnexpectedReply,
 )
 from kcp_protocol.transport import KCPSerialTransport, KCPTimeoutError
+
+
+@dataclass(frozen=True)
+class Measurement:
+    value: float
+    unit: Literal["g", "N"]
 
 
 class SauterFS220(KCPDevice):
@@ -17,7 +26,6 @@ class SauterFS220(KCPDevice):
         port: str | None = None,
         *,
         transport: KCPTransport | None = None,
-        stream_interval_ms: int | None = None,
     ) -> None:
         if (port is None) == (transport is None):
             raise ValueError("Specify exactly one of port or transport")
@@ -27,7 +35,6 @@ class SauterFS220(KCPDevice):
         elif transport is not None:
             super().__init__(transport)
 
-        self._stream_interval_ms = stream_interval_ms
         self._sir_active = False
 
     def open(self) -> None:
@@ -45,35 +52,53 @@ class SauterFS220(KCPDevice):
         self.require_support(*self.REQUIRED_COMMANDS)
 
     @staticmethod
-    def _is_immediate_value_raw_line(raw: str) -> bool:
+    def _parse_measurement(raw: str) -> Measurement:
         parts = raw.split()
-        return len(parts) >= 4 and parts[0] == "S"
+        if len(parts) < 4 or parts[0] != "S":
+            raise KCPUnexpectedReply(f"Invalid measurement reply: {raw!r}")
 
-    def read_immediate_value_raw(self) -> str:
+        unit = parts[-1]
+        if unit not in {"g", "N"}:
+            raise KCPUnexpectedReply(f"Unsupported measurement unit: {raw!r}")
+
+        value_text = parts[-2]
+        if len(parts) >= 5 and parts[-3] in {"+", "-"}:
+            value_text = parts[-3] + value_text
+
+        try:
+            value = float(value_text)
+        except ValueError as exc:
+            raise KCPUnexpectedReply(f"Invalid measurement value: {raw!r}") from exc
+
+        return Measurement(value=value, unit=unit)
+
+    def read_value(self) -> float:
+        return self.read_measurement().value
+
+    def read_measurement(self) -> Measurement:
         self.require_support("SI")
         raw = self._request_raw_line("SI")
-        if not self._is_immediate_value_raw_line(raw):
-            raise KCPUnexpectedReply(f"Invalid SI reply: {raw!r}")
-        return raw
+        return self._parse_measurement(raw)
 
-    def stream_immediate_value_raw(
+    def stream_values(
         self,
         *,
         interval_ms: int | None = None,
-    ) -> Generator[str, None, None]:
-        effective_interval_ms = (
-            self._stream_interval_ms if interval_ms is None else interval_ms
-        )
-        self._start_sir(effective_interval_ms)
+    ) -> Generator[float, None, None]:
+        for measurement in self.stream_measurements(interval_ms=interval_ms):
+            yield measurement.value
+
+    def stream_measurements(
+        self,
+        *,
+        interval_ms: int | None = None,
+    ) -> Generator[Measurement, None, None]:
+        self._start_sir(interval_ms)
 
         try:
             while self._sir_active:
-                raw = self._read_raw_line(
-                    timeout=self._sir_read_timeout(effective_interval_ms)
-                )
-                if not self._is_immediate_value_raw_line(raw):
-                    raise KCPUnexpectedReply(f"Invalid SIR reply: {raw!r}")
-                yield raw
+                raw = self._read_raw_line(timeout=self._sir_read_timeout(interval_ms))
+                yield self._parse_measurement(raw)
         finally:
             self.stop_stream()
 
@@ -111,7 +136,7 @@ class SauterFS220(KCPDevice):
             except KCPTimeoutError:
                 return
 
-            if self._is_immediate_value_raw_line(raw):
+            if raw.split()[:1] == ["S"]:
                 continue
 
             return
