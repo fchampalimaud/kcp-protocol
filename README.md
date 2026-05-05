@@ -83,12 +83,31 @@ with SauterFS220(port="COM3") as device:
 
 > [!NOTE]
 > Stopping a stream does not close the device connection. You can continue to use the device for other commands after stopping a stream.
-
-
-> [!WARNING]
+> 
 > If you stop consuming the stream early, call `stop_stream()` explicitly so the device exits streaming mode cleanly.
 
+### Advanced Transport Configuration
+
+If you need to customize transport parameters (e.g. timeouts) or implement a custom transport, you can use `KCPSerialTransport` directly or subclass it.
+
+```python
+from kcp_protocol import KCPSerialTransport, SauterFS220
+
+transport = KCPSerialTransport(
+    "COM3",
+    read_poll_timeout=0.1,
+    write_timeout=1.0,
+)
+
+with SauterFS220(transport=transport) as device:
+    print(device.read_value())
+```
+
+> [!NOTE]
+> Use this advanced path only when you need custom transport behavior. For most use cases, the default `SauterFS220(port=...)` constructor is sufficient and the recommended usage.
+
 ## Public API
+
 The main public entry points are:
 
 - `SauterFS220` for the device-specific high-level interface

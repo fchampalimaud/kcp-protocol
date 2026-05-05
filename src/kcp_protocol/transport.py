@@ -1,9 +1,14 @@
 from __future__ import annotations
-import time
 
+import time
 from typing import Self
 
 import serial
+
+DEFAULT_READ_POLL_TIMEOUT = 0.1
+DEFAULT_WRITE_TIMEOUT = 1.0
+FIRST_RESPONSE_TIMEOUT = 2.0
+INTER_LINE_GAP_TIMEOUT = 0.1
 
 
 class KCPTransportError(RuntimeError):
@@ -19,9 +24,17 @@ class KCPEncodingError(KCPTransportError):
 
 
 class KCPSerialTransport:
-    def __init__(self, port: str):
+    def __init__(
+        self,
+        port: str,
+        *,
+        read_poll_timeout: float = DEFAULT_READ_POLL_TIMEOUT,
+        write_timeout: float = DEFAULT_WRITE_TIMEOUT,
+    ) -> None:
         self._port = port
         self._ser: serial.Serial | None = None
+        self._read_poll_timeout = read_poll_timeout
+        self._write_timeout = write_timeout
 
     def open(self) -> None:
         if self._ser and self._ser.is_open:
@@ -30,8 +43,8 @@ class KCPSerialTransport:
         self._ser = serial.Serial(
             port=self._port,
             baudrate=115200,
-            timeout=1,
-            write_timeout=1,
+            timeout=self._read_poll_timeout,
+            write_timeout=self._write_timeout,
             bytesize=serial.EIGHTBITS,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
@@ -101,10 +114,10 @@ class KCPSerialTransport:
     def request_lines(self, command_line: str) -> list[str]:
         self.send(command_line)
 
-        lines = [self._read_required_line(timeout=2.0)]
+        lines = [self.read_line(timeout=FIRST_RESPONSE_TIMEOUT)]
 
         while True:
-            line = self._read_optional_line(timeout=0.1)
+            line = self._read_optional_line(timeout=INTER_LINE_GAP_TIMEOUT)
             if line is None:
                 return lines
             lines.append(line)
