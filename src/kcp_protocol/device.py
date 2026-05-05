@@ -126,6 +126,14 @@ class KCPDevice:
         self.close()
 
     @staticmethod
+    def _raise_for_error(frame: KCPFrame) -> KCPFrame:
+        if frame.code == "L":
+            raise KCPLogicalError(frame.raw)
+        if frame.code == "I":
+            raise KCPBusyError(frame.raw)
+        return frame
+
+    @staticmethod
     def _format(command: str, *args: object) -> str:
         parts = [command]
         parts.extend(quote_arg(arg) for arg in args)
@@ -133,11 +141,7 @@ class KCPDevice:
 
     def _read_frame(self) -> KCPFrame:
         frame = parse_kcp_line(self._transport.read_line())
-        if frame.code == "L":
-            raise KCPLogicalError(frame.raw)
-        if frame.code == "I":
-            raise KCPBusyError(frame.raw)
-        return frame
+        return self._raise_for_error(frame)
 
     def _request_raw_line(self, command: str, *args: object) -> str:
         return self._transport.request_line(self._format(command, *args))
@@ -148,13 +152,7 @@ class KCPDevice:
     def _request_single(self, command: str, *args: object) -> KCPFrame:
         raw = self._transport.request_line(self._format(command, *args))
         frame = parse_kcp_line(raw)
-
-        if frame.code == "L":
-            raise KCPLogicalError(frame.raw)
-        if frame.code == "I":
-            raise KCPBusyError(frame.raw)
-
-        return frame
+        return self._raise_for_error(frame)
 
     def _request_list(self, command: str, *args: object) -> list[KCPFrame]:
         raw_lines = self._transport.request_lines(self._format(command, *args))
