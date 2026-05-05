@@ -64,12 +64,6 @@ class KCPSerialTransport:
             raise KCPTimeoutError("Timed out waiting for device response")
         return line
 
-    def _read_required_line(self, timeout: float | None = None) -> str:
-        line = self._read_optional_line(timeout=timeout)
-        if line is None:
-            raise KCPTimeoutError("Timed out waiting for device response")
-        return line
-
     def _read_optional_line(self, timeout: float | None = None) -> str | None:
         ser = self._require_open_serial()
         deadline = None if timeout is None else time.monotonic() + timeout
@@ -101,22 +95,11 @@ class KCPSerialTransport:
         return text.rstrip("\r\n")
 
     def request_line(self, command_line: str) -> str:
-        ser = self._require_open_serial()
-        payload = self._encode_command(command_line)
-
-        ser.reset_input_buffer()
-        ser.write(payload)
-        ser.flush()
-
-        return self._read_required_line()
+        self.send(command_line)
+        return self.read_line()
 
     def request_lines(self, command_line: str) -> list[str]:
-        ser = self._require_open_serial()
-        payload = self._encode_command(command_line)
-
-        ser.reset_input_buffer()
-        ser.write(payload)
-        ser.flush()
+        self.send(command_line)
 
         lines = [self._read_required_line(timeout=2.0)]
 
